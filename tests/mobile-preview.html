@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>手机与脚本 iframe 挂载验证</title>
+<style>
+body { margin: 0; background: #14232a; color: #d7e3e8; font: 14px system-ui; }
+#phone { display: block; width: 390px; height: 760px; border: 1px solid #72969c; }
+body.test-host { position: fixed; overflow: hidden; touch-action: none; width: 100%; height: 100%; }
+body.test-host > div { display: none; }
+</style>
+<script type="module">
+// 仅开发服务器使用；不是真实酒馆。子 iframe 为隐藏脚本容器，UI 应出现在其父页面。
+if (!new URL(location.href).searchParams.has('host')) {
+    const frame = document.createElement('iframe');
+    frame.id = 'phone';
+    frame.src = './mobile-preview.html?host';
+    document.body.append(frame);
+} else {
+    document.body.className = 'test-host';
+    const { putRecord } = await import('../storage.js');
+    const operators = [
+        { name: '移动测试医师', en: 'Test Medic', profession: '医疗', rarity: 5, order: 1 },
+        { name: '移动测试近卫', en: 'Test Guard', profession: '近卫', rarity: 6, order: 2 },
+    ];
+    await putRecord({ id: 'index:operators', fetchedAt: Date.now(), operators,
+        portraits: Object.fromEntries(operators.flatMap(op => ['portrait', 'avatar'].map(mode => [`${mode}:${op.name}`, '']))) });
+    for (const op of operators) await putRecord({
+        id: `character:${op.name}`, kind: 'character', title: op.name,
+        source: `https://prts.wiki/w/${op.name}`, fetchedAt: Date.now(), images: [], storyLinks: [],
+        sections: [{ id: 'basic', title: '基础档案', text: '开发测试占位内容，不是真实游戏人物。', basic: true }],
+    });
+    window.SillyTavern = { getContext: () => ({
+        extensionSettings: {}, chatMetadata: {}, getCurrentChatId: () => 'mobile-test',
+        setExtensionPrompt() {}, saveSettingsDebounced() {}, saveMetadataDebounced() {},
+    }) };
+    const menu = document.createElement('section');
+    menu.id = 'extensionsMenu';
+    document.body.append(menu);
+    const loader = document.createElement('iframe');
+    loader.id = 'script-loader';
+    loader.hidden = true;
+    loader.srcdoc = '<script type="module">import "/index.js?v=0.2.3";<\/script>';
+    document.body.append(loader);
+}
+</script>
+</html>

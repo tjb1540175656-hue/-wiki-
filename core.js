@@ -1,4 +1,4 @@
-export const VERSION = '0.2.2';
+export const VERSION = '0.2.3';
 export const KEY = 'terra_archive';
 export const PROMPT_KEY = 'terra_archive_reference';
 

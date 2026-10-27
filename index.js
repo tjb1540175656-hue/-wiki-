@@ -1,14 +1,20 @@
-import { KEY, PROMPT_KEY, VERSION, normalizeChatState, defaultChatState, normalizeTitle, safeImageUrl, storyPath, renderEntry, buildReference } from './core.js?v=0.2.2';
-import { allRecords, putRecord, deleteRecord } from './storage.js?v=0.2.1';
-import { searchCharacters, loadCharacter, loadStory, loadCatalog, cacheArtwork } from './wiki.js?v=0.2.1';
-import { loadOperatorDirectory, loadStoryDirectory, loadMemoryDirectory, lookupPortraits } from './directory.js?v=0.2.1';
-import { createViews } from './views.js?v=0.2.1';
+import { KEY, PROMPT_KEY, VERSION, normalizeChatState, defaultChatState, normalizeTitle, safeImageUrl, storyPath, renderEntry, buildReference } from './core.js?v=0.2.3';
+import { allRecords, putRecord, deleteRecord } from './storage.js?v=0.2.3';
+import { searchCharacters, loadCharacter, loadStory, loadCatalog, cacheArtwork } from './wiki.js?v=0.2.3';
+import { loadOperatorDirectory, loadStoryDirectory, loadMemoryDirectory, lookupPortraits } from './directory.js?v=0.2.3';
+import { createViews } from './views.js?v=0.2.3';
 
-const context = () => globalThis.SillyTavern?.getContext?.();
+// 与酒馆助手脚本一样，优先挂在可访问的父页面，而非脚本所在的小 iframe。
+const window = (() => {
+    try { return globalThis.window.parent?.document ? globalThis.window.parent : globalThis.window; }
+    catch { return globalThis.window; }
+})();
+const document = window.document;
+const context = () => (window.SillyTavern || globalThis.SillyTavern)?.getContext?.();
 const records = new Map();
 const state = { tab: 'characters', selected: null, busy: false, status: '', error: '', query: '', storyQuery: '', candidates: [], catalog: null, filter: '', catalogLimit: 60,
     operatorIndex: null, storyIndex: null, memoryIndex: null,
-    opQuery: '', opProfession: '', opRarity: '', opSort: 'release-desc', opMode: 'portrait', opPage: 0, opPageSize: 24,
+    opQuery: '', opProfession: '', opRarity: '', opSort: 'release-desc', opMode: 'portrait', opPage: 0, opPageSize: 24, operatorToolsOpen: false, artToolsOpen: false,
     characterOpen: false, storyOpen: false, dossierTab: 'basic', artworkIndex: 0,
     storyCategory: '', storyGroup: null, storyFilter: '', storyLimit: 36 };
 const directoryAttempts = new Set(), portraitPending = new Set();
@@ -33,10 +39,10 @@ function normalizeDisplay(value = {}) {
         cardSize: Number(value.cardSize) ? clampNumber(value.cardSize, 80, 300, 0) : 0,
     };
 }
-let display = (() => { try { return normalizeDisplay(JSON.parse(localStorage.getItem(DISPLAY_KEY) || '{}')); } catch { return normalizeDisplay(); } })();
+let display = (() => { try { return normalizeDisplay(JSON.parse(window.localStorage.getItem(DISPLAY_KEY) || '{}')); } catch { return normalizeDisplay(); } })();
 function saveDisplay(patch) {
     display = normalizeDisplay({ ...display, ...patch });
-    try { localStorage.setItem(DISPLAY_KEY, JSON.stringify(display)); } catch { /* 隐私模式等情况下仅本次有效 */ }
+    try { window.localStorage.setItem(DISPLAY_KEY, JSON.stringify(display)); } catch { /* 隐私模式等情况下仅本次有效 */ }
     applyDisplay();
 }
 function adjustArt(kind, delta) {
@@ -66,7 +72,7 @@ function placeLauncher() {
     const left = viewport?.offsetLeft || 0, top = viewport?.offsetTop || 0;
     const visibleWidth = viewport?.width || window.innerWidth;
     const visibleHeight = viewport?.height || window.innerHeight;
-    const width = launcher.offsetWidth || 120, height = launcher.offsetHeight || 44;
+    const width = launcher.offsetWidth || 58, height = launcher.offsetHeight || 58;
     const rect = launcher.getBoundingClientRect();
     const wantedLeft = display.launcherRight == null ? rect.left : window.innerWidth - display.launcherRight - width;
     const wantedTop = display.launcherBottom == null ? rect.top : window.innerHeight - display.launcherBottom - height;
@@ -79,15 +85,17 @@ let suppressLauncherClick = false;
 function enableLauncherDrag() {
     let start = null;
     launcher.addEventListener('pointerdown', e => {
-        if (e.button !== 0) return;
+        if (e.button !== 0 || e.isPrimary === false) return;
+        suppressLauncherClick = false;
         const rect = launcher.getBoundingClientRect();
         start = { x: e.clientX, y: e.clientY, right: window.innerWidth - rect.right, bottom: window.innerHeight - rect.bottom, moved: false, id: e.pointerId };
+        launcher.setPointerCapture?.(e.pointerId);
     });
     launcher.addEventListener('pointermove', e => {
         if (!start || e.pointerId !== start.id) return;
         const dx = e.clientX - start.x, dy = e.clientY - start.y;
         if (!start.moved && Math.hypot(dx, dy) < 8) return;
-        if (!start.moved) { start.moved = true; launcher.setPointerCapture?.(e.pointerId); launcher.classList.add('is-dragging'); }
+        if (!start.moved) { start.moved = true; launcher.classList.add('is-dragging'); }
         const right = Math.min(Math.max(4, start.right - dx), window.innerWidth - launcher.offsetWidth - 4);
         const bottom = Math.min(Math.max(4, start.bottom - dy), window.innerHeight - launcher.offsetHeight - 4);
         launcher.style.right = `${right}px`; launcher.style.bottom = `${bottom}px`;
@@ -103,6 +111,7 @@ function enableLauncherDrag() {
     };
     launcher.addEventListener('pointerup', finish);
     launcher.addEventListener('pointercancel', finish);
+    launcher.addEventListener('lostpointercapture', finish);
 }
 
 // 酒馆输入框左侧“魔杖”扩展菜单里的入口：手机上悬浮按钮被遮挡或隐藏时也能打开。
@@ -132,7 +141,7 @@ function el(tag, attrs = {}, ...children) {
         else node.setAttribute(key, value === true ? '' : String(value));
     }
     for (const child of children.flat(Infinity)) {
-        if (child !== null && child !== undefined && child !== false) node.append(child instanceof Node ? child : document.createTextNode(String(child)));
+        if (child !== null && child !== undefined && child !== false) node.append(child instanceof window.Node ? child : document.createTextNode(String(child)));
     }
     return node;
 }
@@ -172,7 +181,7 @@ function refreshPrompt() {
     ctx?.setExtensionPrompt?.(PROMPT_KEY, text, 1, 1, false, 0, null);
     return text;
 }
-globalThis.terra_archive_interceptor = () => { refreshPrompt(); };
+globalThis.terra_archive_interceptor = window.terra_archive_interceptor = () => { refreshPrompt(); };
 
 function notify(message, error = false) {
     state.status = error ? '' : message;
@@ -540,7 +549,7 @@ function displaySection() {
         slider('卡片最小宽度', display.cardSize, 0, 300, 10, 'px', v => saveDisplay({ cardSize: v }), v => auto(v) || `${v}px`),
         hint('高度、卡片宽度拖到最左即为“自动”（按屏幕大小自适应）。人物详情页立绘下方也有 ＋ / − 快捷按钮。'),
         el('div', { class: 'ta-actions' }, button('显示设置全部恢复默认', () => {
-            display = normalizeDisplay(); try { localStorage.removeItem(DISPLAY_KEY); } catch { /* 忽略 */ }
+            display = normalizeDisplay(); try { window.localStorage.removeItem(DISPLAY_KEY); } catch { /* 忽略 */ }
             applyDisplay(); render();
         })));
 }
@@ -615,8 +624,25 @@ async function initialize() {
     shadow = host.attachShadow({ mode: 'open' });
     shadow.append(el('link', { rel: 'stylesheet', href: new URL(`./style.css?v=${VERSION}`, import.meta.url).href }));
     shadow.append(el('link', { rel: 'stylesheet', href: new URL(`./gallery.css?v=${VERSION}`, import.meta.url).href }));
-    launcher = button('◇ 泰拉档案馆', () => { if (suppressLauncherClick) { suppressLauncherClick = false; return; } openPanel(); },
-        { class: 'ta-launcher', title: '打开明日方舟人物与剧情资料库（按住可拖动位置）', disabled: false });
+    // 悬浮球直接挂在 body，样式放在 head；不再依赖 Shadow DOM 的宿主或内部样式表。
+    const launcherStyle = el('style', { id: 'terra-archive-launcher-style' }, `
+        #terra-archive-launcher {
+            all: initial; box-sizing: border-box; position: fixed; right: 18px; bottom: 105px;
+            z-index: 2147483000; width: 58px; height: 58px; display: grid; place-items: center;
+            margin: 0; padding: 0; border: 1px solid #91ede7; border-radius: 50%;
+            background: radial-gradient(circle at 33% 27%, #31565b, #122c34 60%, #08161d);
+            color: #bafff3; box-shadow: 0 8px 26px #0009, inset 0 0 0 4px #10242c;
+            font: 12px/1.25 system-ui, sans-serif; text-align: center; white-space: pre-line;
+            cursor: grab; touch-action: none; pointer-events: auto; visibility: visible; opacity: 1;
+            user-select: none; -webkit-user-select: none; -webkit-touch-callout: none;
+        }
+        #terra-archive-launcher[hidden] { display: none !important; }
+        #terra-archive-launcher:focus-visible { outline: 2px solid #bafff3; outline-offset: 3px; }
+        #terra-archive-launcher.is-dragging { cursor: grabbing; opacity: .85; }
+    `);
+    document.head.append(launcherStyle);
+    launcher = button('◇\n档案馆', () => { if (suppressLauncherClick) { suppressLauncherClick = false; return; } openPanel(); },
+        { id: 'terra-archive-launcher', class: 'ta-launcher', title: '泰拉档案馆（按住可拖动位置）', 'aria-label': '打开泰拉档案馆', disabled: false });
     dialog = el('dialog', { class: 'ta-dialog', 'aria-labelledby': 'ta-dialog-title', oncancel: () => { lastFocus?.focus?.(); } });
     const close = button('关闭 ×', closePanel, { class: 'ta-close', disabled: false, 'aria-label': '关闭泰拉档案馆' });
     content = el('main', { class: 'ta-content', tabindex: '-1' });
@@ -627,11 +653,11 @@ async function initialize() {
             el('nav', { class: 'ta-navigation', 'aria-label': '档案馆导航' }), el('div', { class: 'ta-sidebar-note' }, '人物 · 剧情 · 记忆线索', el('br'), `LOCAL EDITION / ${VERSION}`)),
         el('div', { class: 'ta-main' }, el('div', { class: 'ta-topbar' }, el('span', {}, 'ARKNIGHTS REFERENCE TERMINAL'), close), content, statusBar)));
     dialog.addEventListener('click', e => { if (e.target === dialog) closePanel(); });
-    shadow.append(launcher, dialog);
-    document.body.append(host);
+    shadow.append(dialog);
+    document.body.append(launcher, host);
     enableLauncherDrag();
     applyDisplay();
-    requestAnimationFrame(placeLauncher);
+    window.requestAnimationFrame(placeLauncher);
     window.addEventListener('resize', placeLauncher);
     window.visualViewport?.addEventListener('resize', placeLauncher);
     window.visualViewport?.addEventListener('scroll', placeLauncher);

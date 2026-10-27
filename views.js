@@ -1,5 +1,5 @@
-import { PROFESSIONS, STORY_CATEGORIES, filterOperators, backgroundUrl } from './directory.js?v=0.2.1';
-import { safeImageUrl } from './core.js?v=0.2.1';
+import { PROFESSIONS, STORY_CATEGORIES, filterOperators, backgroundUrl } from './directory.js?v=0.2.3';
+import { safeImageUrl } from './core.js?v=0.2.3';
 
 const PROF_SYMBOLS = { 先锋: '△', 近卫: '⚔', 重装: '⬡', 狙击: '⌁', 术师: '♜', 医疗: '✚', 辅助: '◇', 特种: '⌘' };
 const TABS = [
@@ -21,6 +21,17 @@ export function createViews(api) {
     const change = work => { work(); render(); };
     const image = (src, alt, attrs = {}) => src ? el('img', { src, alt, loading: 'lazy', referrerpolicy: 'no-referrer', onerror: e => { e.target.style.visibility = 'hidden'; }, ...attrs }) : null;
     const picture = (key, alt) => image(backgroundUrl(key), alt, { class: 'ta-cover-image' });
+
+    function drawer(key, title, summary, ...children) {
+        const node = el('details', { class: 'ta-tools-drawer', open: !!state[key] });
+        node.append(el('summary', { onclick: e => {
+            e.preventDefault();
+            state[key] = !node.open;
+            node.open = state[key];
+        } }, el('strong', {}, title), el('span', { class: 'ta-drawer-preview' }, summary)),
+        el('div', { class: 'ta-drawer-body' }, ...children));
+        return node;
+    }
 
     function select(label, value, choices, action) {
         const node = el('select', { 'aria-label': label, onchange: e => action(e.target.value), disabled: state.busy }, choices.map(([key, text]) => el('option', { value: key }, text)));
@@ -55,15 +66,19 @@ export function createViews(api) {
             el('span', {}, `${currentPage + 1} / ${pageCount} 页 · ${filtered.length} 位干员`),
             button('下一页 →', () => change(() => { state.opPage = currentPage + 1; }), { disabled: state.busy || currentPage + 1 >= pageCount }));
         return el('div', { class: 'ta-directory-view' },
-            el('div', { class: 'ta-directory-heading' }, titleBlock('OPERATORS / PRTS INDEX', '人物档案', '以 Wiki 干员一览为图鉴目录。点击人物卡片即可加载，不必先记住名字。'),
-                el('div', { class: 'ta-directory-utilities' }, button('刷新图鉴', () => api.refreshDirectory('characters')), link('Wiki 图鉴 ↗', 'https://prts.wiki/w/干员一览'))),
+            titleBlock('OPERATORS / PRTS INDEX', '人物档案', '点击人物卡片查看档案；筛选和排序可在下方抽屉展开。'),
             el('div', { class: 'ta-directory-toolbar' },
-                field('筛选名称、阵营、分支或代号…', state.opQuery, value => change(() => { state.opQuery = value; state.opPage = 0; }), 'operator-filter'),
-                select('排序方式', state.opSort, [['release-desc', '实装倒序'], ['release-asc', '实装顺序'], ['name-asc', '名称升序'], ['name-desc', '名称降序'], ['rarity-desc', '稀有度降序'], ['rarity-asc', '稀有度升序']], value => change(() => { state.opSort = value; state.opPage = 0; })),
-                el('div', { class: 'ta-segmented' }, [['portrait', '半身像'], ['avatar', '头像'], ['list', '列表']].map(([mode, label]) => button(label, () => change(() => { state.opMode = mode; }), { class: `ta-mode ${state.opMode === mode ? 'active' : ''}`, 'aria-pressed': state.opMode === mode })))),
-            el('div', { class: 'ta-directory-filters' },
-                el('div', { class: 'ta-profession-tabs' }, ['', ...PROFESSIONS].map(profession => button(profession || '全部', () => change(() => { state.opProfession = profession; state.opPage = 0; }), { class: `ta-filter-tab ${state.opProfession === profession ? 'active' : ''}` }))),
-                select('稀有度筛选', state.opRarity, [['', '全部星级'], ...[6, 5, 4, 3, 2, 1].map(n => [String(n), `${n} 星`])], value => change(() => { state.opRarity = value; state.opPage = 0; }))),
+                field('搜索名称、阵营、分支或代号…', state.opQuery, value => change(() => { state.opQuery = value; state.opPage = 0; }), 'operator-filter')),
+            drawer('operatorToolsOpen', '筛选与排序', `${state.opProfession || '全部职业'} · ${state.opRarity ? `${state.opRarity}星` : '全部星级'}`,
+                el('div', { class: 'ta-drawer-field' }, el('span', {}, '职业'),
+                    el('div', { class: 'ta-profession-tabs' }, ['', ...PROFESSIONS].map(profession => button(profession || '全部', () => change(() => { state.opProfession = profession; state.opPage = 0; }), { class: `ta-filter-tab ${state.opProfession === profession ? 'active' : ''}`, 'aria-pressed': state.opProfession === profession })))),
+                el('div', { class: 'ta-drawer-columns' },
+                    el('label', { class: 'ta-drawer-field' }, el('span', {}, '星级'), select('稀有度筛选', state.opRarity, [['', '全部星级'], ...[6, 5, 4, 3, 2, 1].map(n => [String(n), `${n} 星`])], value => change(() => { state.opRarity = value; state.opPage = 0; }))),
+                    el('label', { class: 'ta-drawer-field' }, el('span', {}, '排序'), select('排序方式', state.opSort, [['release-desc', '实装倒序'], ['release-asc', '实装顺序'], ['name-asc', '名称升序'], ['name-desc', '名称降序'], ['rarity-desc', '稀有度降序'], ['rarity-asc', '稀有度升序']], value => change(() => { state.opSort = value; state.opPage = 0; })))),
+                el('div', { class: 'ta-drawer-field' }, el('span', {}, '显示方式'),
+                    el('div', { class: 'ta-segmented' }, [['portrait', '半身像'], ['avatar', '头像'], ['list', '列表']].map(([mode, label]) => button(label, () => change(() => { state.opMode = mode; }), { class: `ta-mode ${state.opMode === mode ? 'active' : ''}`, 'aria-pressed': state.opMode === mode })))),
+                el('div', { class: 'ta-actions' }, button('重置筛选', () => change(() => { state.opProfession = ''; state.opRarity = ''; state.opQuery = ''; state.opSort = 'release-desc'; state.opPage = 0; })),
+                    button('刷新图鉴', () => api.refreshDirectory('characters')), link('Wiki 图鉴 ↗', 'https://prts.wiki/w/干员一览'))),
             directory ? el('div', {}, pagination(),
                 visible.length ? el('div', { class: `ta-operator-grid mode-${state.opMode}` }, visible.map(op => operatorCard(op, state.opMode))) : api.empty('没有匹配的干员', '试试其他职业、星级或关键字。'),
                 pagination(), hint(`目录更新于 ${new Date(directory.fetchedAt).toLocaleString()} · 仅按当前页加载缩略图；点击人物后才读取档案。`))
@@ -102,13 +117,14 @@ export function createViews(api) {
                         art ? image(api.imageSource(art), art.name, { class: 'ta-dossier-illustration', loading: 'eager' }) : el('span', { class: 'ta-art-placeholder' }, '暂无立绘'),
                         el('div', { class: 'ta-dossier-hero-label' }, el('span', { class: 'ta-kicker' }, meta?.en || item.characterId || 'OPERATOR'), el('h2', {}, item.title),
                             el('div', {}, badge(meta?.profession || '干员'), meta?.branch ? badge(meta.branch) : null, meta?.rarity ? el('span', { class: 'ta-rarity-inline' }, '★'.repeat(meta.rarity)) : null))),
-                    el('div', { class: 'ta-art-tools', role: 'group', 'aria-label': '立绘显示大小' }, el('span', {}, '立绘'),
+                    drawer('artToolsOpen', '立绘显示调整', '缩放 · 高度',
+                      el('div', { class: 'ta-art-tools', role: 'group', 'aria-label': '立绘显示大小' },
                         button('－', () => api.adjustArt('zoom', -10), { class: 'ta-mode', title: '缩小立绘', 'aria-label': '缩小立绘', disabled: false }),
                         button('＋', () => api.adjustArt('zoom', 10), { class: 'ta-mode', title: '放大立绘', 'aria-label': '放大立绘', disabled: false }),
                         button('矮', () => api.adjustArt('height', -5), { class: 'ta-mode', title: '降低立绘区域高度', disabled: false }),
                         button('高', () => api.adjustArt('height', 5), { class: 'ta-mode', title: '增加立绘区域高度', disabled: false }),
                         button('重置', () => api.adjustArt('reset'), { class: 'ta-mode', title: '恢复默认立绘显示', disabled: false }),
-                        button('更多…', api.openDisplaySettings, { class: 'ta-mode', title: '打开显示设置', disabled: false })),
+                        button('更多…', api.openDisplaySettings, { class: 'ta-mode', title: '打开显示设置', disabled: false }))),
                     el('div', { class: 'ta-dossier-thumbnails', 'aria-label': '切换立绘' }, item.images.map((artwork, index) => button(el('div', {}, image(api.imageSource(artwork), artwork.name), el('span', {}, /skin/.test(artwork.name) ? `时装 ${index}` : index === 0 ? '默认立绘' : '精英立绘')),
                         () => change(() => { state.artworkIndex = index; }), { class: `ta-art-thumbnail ${index === artIndex ? 'active' : ''}`, 'aria-label': `选择${artwork.name}` }))),
                     el('div', { class: 'ta-actions' }, button(active ? '从聊天移除' : '加入当前聊天', () => api.toggleCharacter(item), { class: `ta-button ${active ? '' : 'primary'}` }), button('更新资料', () => api.updateCharacter(item))),
