@@ -1,4 +1,4 @@
-import { KEY, PROMPT_KEY, VERSION, normalizeChatState, defaultChatState, normalizeTitle, safeImageUrl, storyPath, renderEntry, buildReference } from './core.js?v=0.2.1';
+import { KEY, PROMPT_KEY, VERSION, normalizeChatState, defaultChatState, normalizeTitle, safeImageUrl, storyPath, renderEntry, buildReference } from './core.js?v=0.2.2';
 import { allRecords, putRecord, deleteRecord } from './storage.js?v=0.2.1';
 import { searchCharacters, loadCharacter, loadStory, loadCatalog, cacheArtwork } from './wiki.js?v=0.2.1';
 import { loadOperatorDirectory, loadStoryDirectory, loadMemoryDirectory, lookupPortraits } from './directory.js?v=0.2.1';
@@ -59,13 +59,21 @@ function applyDisplay() {
 function placeLauncher() {
     if (!launcher) return;
     launcher.hidden = !display.launcher;
-    if (display.launcherRight == null || display.launcherBottom == null) { launcher.style.right = ''; launcher.style.bottom = ''; return; }
-    // 屏幕旋转或窗口缩小后仍然夹在可视范围内，避免按钮跑到屏幕外。
+    launcher.style.right = '';
+    launcher.style.bottom = '';
+    // 手机地址栏、键盘和页面缩放会使可视区域小于布局视口；默认位置也要校正。
+    const viewport = window.visualViewport;
+    const left = viewport?.offsetLeft || 0, top = viewport?.offsetTop || 0;
+    const visibleWidth = viewport?.width || window.innerWidth;
+    const visibleHeight = viewport?.height || window.innerHeight;
     const width = launcher.offsetWidth || 120, height = launcher.offsetHeight || 44;
-    const right = Math.min(display.launcherRight, Math.max(0, window.innerWidth - width - 4));
-    const bottom = Math.min(display.launcherBottom, Math.max(0, window.innerHeight - height - 4));
-    launcher.style.right = `${Math.max(4, right)}px`;
-    launcher.style.bottom = `${Math.max(4, bottom)}px`;
+    const rect = launcher.getBoundingClientRect();
+    const wantedLeft = display.launcherRight == null ? rect.left : window.innerWidth - display.launcherRight - width;
+    const wantedTop = display.launcherBottom == null ? rect.top : window.innerHeight - display.launcherBottom - height;
+    const x = Math.max(left + 4, Math.min(wantedLeft, left + visibleWidth - width - 4));
+    const y = Math.max(top + 4, Math.min(wantedTop, top + visibleHeight - height - 4));
+    launcher.style.right = `${window.innerWidth - x - width}px`;
+    launcher.style.bottom = `${window.innerHeight - y - height}px`;
 }
 let suppressLauncherClick = false;
 function enableLauncherDrag() {
@@ -596,6 +604,14 @@ async function initialize() {
     const saved = ctx?.extensionSettings?.[KEY];
     settings = { enabled: saved?.enabled !== false, maxChars: Math.max(1000, Math.min(30000, Number(saved?.maxChars) || 12000)) };
     host = el('div', { id: 'terra-archive-host' });
+    // Shadow DOM 不保护宿主本身。隔离酒馆移动端/主题对 body 子节点的布局与隐藏规则。
+    for (const [property, value] of Object.entries({
+        display: 'block', position: 'fixed', inset: '0', width: 'auto', height: 'auto',
+        'min-width': '0', 'min-height': '0', 'max-width': 'none', 'max-height': 'none',
+        margin: '0', padding: '0', border: '0', overflow: 'visible',
+        visibility: 'visible', opacity: '1', transform: 'none', filter: 'none',
+        contain: 'none', 'clip-path': 'none', 'pointer-events': 'none', 'z-index': '2147483000',
+    })) host.style.setProperty(property, value, 'important');
     shadow = host.attachShadow({ mode: 'open' });
     shadow.append(el('link', { rel: 'stylesheet', href: new URL(`./style.css?v=${VERSION}`, import.meta.url).href }));
     shadow.append(el('link', { rel: 'stylesheet', href: new URL(`./gallery.css?v=${VERSION}`, import.meta.url).href }));
@@ -617,6 +633,9 @@ async function initialize() {
     applyDisplay();
     requestAnimationFrame(placeLauncher);
     window.addEventListener('resize', placeLauncher);
+    window.visualViewport?.addEventListener('resize', placeLauncher);
+    window.visualViewport?.addEventListener('scroll', placeLauncher);
+    shadow.querySelector('link').addEventListener('load', placeLauncher);
     window.addEventListener('orientationchange', () => setTimeout(placeLauncher, 300));
     watchMenuEntry();
     try {
