@@ -1,8 +1,8 @@
-import { KEY, PROMPT_KEY, VERSION, normalizeChatState, defaultChatState, normalizeTitle, safeImageUrl, storyPath, renderEntry, buildReference } from './core.js?v=0.2.0';
-import { allRecords, putRecord, deleteRecord } from './storage.js?v=0.2.0';
-import { searchCharacters, loadCharacter, loadStory, loadCatalog, cacheArtwork } from './wiki.js?v=0.2.0';
-import { loadOperatorDirectory, loadStoryDirectory, loadMemoryDirectory, lookupPortraits } from './directory.js?v=0.2.0';
-import { createViews } from './views.js?v=0.2.0';
+import { KEY, PROMPT_KEY, VERSION, normalizeChatState, defaultChatState, normalizeTitle, safeImageUrl, storyPath, renderEntry, buildReference } from './core.js?v=0.2.1';
+import { allRecords, putRecord, deleteRecord } from './storage.js?v=0.2.1';
+import { searchCharacters, loadCharacter, loadStory, loadCatalog, cacheArtwork } from './wiki.js?v=0.2.1';
+import { loadOperatorDirectory, loadStoryDirectory, loadMemoryDirectory, lookupPortraits } from './directory.js?v=0.2.1';
+import { createViews } from './views.js?v=0.2.1';
 
 const context = () => globalThis.SillyTavern?.getContext?.();
 const records = new Map();
@@ -13,9 +13,106 @@ const state = { tab: 'characters', selected: null, busy: false, status: '', erro
     storyCategory: '', storyGroup: null, storyFilter: '', storyLimit: 36 };
 const directoryAttempts = new Set(), portraitPending = new Set();
 let settings = { enabled: true, maxChars: 12000 };
-let shadow, dialog, content, statusBar, launcher, lastFocus;
+let shadow, host, dialog, content, statusBar, launcher, lastFocus;
 const blobUrls = new Map();
 let offEvents = [];
+
+// 显示偏好只存当前设备（localStorage），手机和电脑可以各用各的尺寸。
+const DISPLAY_KEY = 'terra-archive-display';
+const DISPLAY_DEFAULTS = { launcher: true, launcherRight: null, launcherBottom: null, artHeight: 0, artZoom: 100, artFit: 'contain', artY: 25, cardSize: 0 };
+const clampNumber = (value, min, max, fallback) => { const n = Number(value); return Number.isFinite(n) ? Math.min(max, Math.max(min, n)) : fallback; };
+function normalizeDisplay(value = {}) {
+    return {
+        launcher: value.launcher !== false,
+        launcherRight: value.launcherRight == null ? null : clampNumber(value.launcherRight, 0, 10000, null),
+        launcherBottom: value.launcherBottom == null ? null : clampNumber(value.launcherBottom, 0, 10000, null),
+        artHeight: Number(value.artHeight) ? clampNumber(value.artHeight, 20, 95, 0) : 0,
+        artZoom: clampNumber(value.artZoom, 50, 250, 100),
+        artFit: value.artFit === 'cover' ? 'cover' : 'contain',
+        artY: clampNumber(value.artY, 0, 100, 25),
+        cardSize: Number(value.cardSize) ? clampNumber(value.cardSize, 80, 300, 0) : 0,
+    };
+}
+let display = (() => { try { return normalizeDisplay(JSON.parse(localStorage.getItem(DISPLAY_KEY) || '{}')); } catch { return normalizeDisplay(); } })();
+function saveDisplay(patch) {
+    display = normalizeDisplay({ ...display, ...patch });
+    try { localStorage.setItem(DISPLAY_KEY, JSON.stringify(display)); } catch { /* 隐私模式等情况下仅本次有效 */ }
+    applyDisplay();
+}
+function adjustArt(kind, delta) {
+    if (kind === 'zoom') saveDisplay({ artZoom: display.artZoom + delta });
+    else if (kind === 'height') saveDisplay({ artHeight: (display.artHeight || 60) + delta });
+    else if (kind === 'reset') saveDisplay({ artHeight: 0, artZoom: 100, artFit: 'contain', artY: 25 });
+}
+function applyDisplay() {
+    if (!host) return;
+    const style = host.style;
+    style.setProperty('--ta-art-zoom', String(display.artZoom / 100));
+    style.setProperty('--ta-art-fit', display.artFit);
+    style.setProperty('--ta-art-y', `${display.artY}%`);
+    style.setProperty('--ta-art-height', `${display.artHeight || 60}vh`);
+    style.setProperty('--ta-card-size', `${display.cardSize || 160}px`);
+    dialog?.classList.toggle('ta-custom-art-height', !!display.artHeight);
+    dialog?.classList.toggle('ta-custom-card-size', !!display.cardSize);
+    placeLauncher();
+}
+function placeLauncher() {
+    if (!launcher) return;
+    launcher.hidden = !display.launcher;
+    if (display.launcherRight == null || display.launcherBottom == null) { launcher.style.right = ''; launcher.style.bottom = ''; return; }
+    // 屏幕旋转或窗口缩小后仍然夹在可视范围内，避免按钮跑到屏幕外。
+    const width = launcher.offsetWidth || 120, height = launcher.offsetHeight || 44;
+    const right = Math.min(display.launcherRight, Math.max(0, window.innerWidth - width - 4));
+    const bottom = Math.min(display.launcherBottom, Math.max(0, window.innerHeight - height - 4));
+    launcher.style.right = `${Math.max(4, right)}px`;
+    launcher.style.bottom = `${Math.max(4, bottom)}px`;
+}
+let suppressLauncherClick = false;
+function enableLauncherDrag() {
+    let start = null;
+    launcher.addEventListener('pointerdown', e => {
+        if (e.button !== 0) return;
+        const rect = launcher.getBoundingClientRect();
+        start = { x: e.clientX, y: e.clientY, right: window.innerWidth - rect.right, bottom: window.innerHeight - rect.bottom, moved: false, id: e.pointerId };
+    });
+    launcher.addEventListener('pointermove', e => {
+        if (!start || e.pointerId !== start.id) return;
+        const dx = e.clientX - start.x, dy = e.clientY - start.y;
+        if (!start.moved && Math.hypot(dx, dy) < 8) return;
+        if (!start.moved) { start.moved = true; launcher.setPointerCapture?.(e.pointerId); launcher.classList.add('is-dragging'); }
+        const right = Math.min(Math.max(4, start.right - dx), window.innerWidth - launcher.offsetWidth - 4);
+        const bottom = Math.min(Math.max(4, start.bottom - dy), window.innerHeight - launcher.offsetHeight - 4);
+        launcher.style.right = `${right}px`; launcher.style.bottom = `${bottom}px`;
+    });
+    const finish = e => {
+        if (!start || e.pointerId !== start.id) return;
+        if (start.moved) {
+            suppressLauncherClick = true;
+            launcher.classList.remove('is-dragging');
+            saveDisplay({ launcherRight: parseFloat(launcher.style.right), launcherBottom: parseFloat(launcher.style.bottom) });
+        }
+        start = null;
+    };
+    launcher.addEventListener('pointerup', finish);
+    launcher.addEventListener('pointercancel', finish);
+}
+
+// 酒馆输入框左侧“魔杖”扩展菜单里的入口：手机上悬浮按钮被遮挡或隐藏时也能打开。
+function addMenuEntry() {
+    if (document.getElementById('terra-archive-menu-item')) return true;
+    const menu = document.getElementById('extensionsMenu');
+    if (!menu) return false;
+    menu.append(el('div', { id: 'terra-archive-menu-item', class: 'list-group-item flex-container flexGap5 interactable', tabindex: '0', title: '打开泰拉档案馆',
+        onclick: () => openPanel(), onkeydown: e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openPanel(); } } },
+    el('div', { class: 'fa-solid fa-book-open extensionsMenuExtensionButton' }), el('span', {}, '泰拉档案馆')));
+    return true;
+}
+function watchMenuEntry() {
+    if (addMenuEntry()) return;
+    const observer = new MutationObserver(() => { if (addMenuEntry()) observer.disconnect(); });
+    observer.observe(document.body, { childList: true, subtree: true });
+    setTimeout(() => observer.disconnect(), 60000);
+}
 
 function el(tag, attrs = {}, ...children) {
     const node = document.createElement(tag);
@@ -412,10 +509,39 @@ function libraryPage() {
                 }), { class: 'ta-button danger' })))));
 }
 
+function slider(label, value, min, max, step, unit, onchange, format = v => `${v}${unit}`) {
+    const output = el('output', { class: 'ta-range-value' }, format(value));
+    return el('label', { class: 'ta-range' }, el('span', {}, label), el('input', { type: 'range', min, max, step, value, 'aria-label': label,
+        oninput: e => { const v = Number(e.target.value); output.textContent = format(v); onchange(v); } }), output);
+}
+
+function displaySection() {
+    const auto = v => v ? null : '自动';
+    return el('section', { class: 'ta-section' }, el('h3', {}, '显示与按钮'),
+        hint('以下设置只保存在当前设备的浏览器中，手机和电脑可以分别调整，互不影响。'),
+        el('h4', {}, '悬浮按钮'),
+        el('label', { class: 'ta-checkbox' }, el('input', { type: 'checkbox', checked: display.launcher, onchange: e => saveDisplay({ launcher: e.target.checked }) }), '显示右下角“泰拉档案馆”悬浮按钮'),
+        hint('看不到按钮时：可按住按钮拖到任意位置；也可以从酒馆输入框左侧的“扩展菜单（魔杖图标）”→“泰拉档案馆”打开。'),
+        el('div', { class: 'ta-actions' }, button('按钮位置恢复默认', () => { saveDisplay({ launcherRight: null, launcherBottom: null, launcher: true }); render(); })),
+        el('h4', {}, '人物立绘'),
+        slider('立绘缩放', display.artZoom, 50, 250, 5, '%', v => saveDisplay({ artZoom: v })),
+        slider('立绘区域高度', display.artHeight, 0, 95, 5, 'vh', v => saveDisplay({ artHeight: v }), v => auto(v) || `${v}% 屏高`),
+        slider('立绘垂直位置', display.artY, 0, 100, 5, '%', v => saveDisplay({ artY: v }), v => v <= 10 ? `${v}%（偏上）` : v >= 90 ? `${v}%（偏下）` : `${v}%`),
+        el('label', { class: 'ta-checkbox' }, el('input', { type: 'checkbox', checked: display.artFit === 'cover', onchange: e => saveDisplay({ artFit: e.target.checked ? 'cover' : 'contain' }) }), '铺满立绘区域（会裁掉部分边缘）'),
+        el('h4', {}, '人物图鉴卡片'),
+        slider('卡片最小宽度', display.cardSize, 0, 300, 10, 'px', v => saveDisplay({ cardSize: v }), v => auto(v) || `${v}px`),
+        hint('高度、卡片宽度拖到最左即为“自动”（按屏幕大小自适应）。人物详情页立绘下方也有 ＋ / − 快捷按钮。'),
+        el('div', { class: 'ta-actions' }, button('显示设置全部恢复默认', () => {
+            display = normalizeDisplay(); try { localStorage.removeItem(DISPLAY_KEY); } catch { /* 忽略 */ }
+            applyDisplay(); render();
+        })));
+}
+
 function settingsPage() {
     const ctx = context();
     const supported = typeof ctx?.setExtensionPrompt === 'function';
     return el('div', {}, titleBlock('ARCHIVE CONTROL', '设置与使用说明', `泰拉档案馆 ${VERSION} · 独立扩展 · 不覆盖角色卡与柏宝书`),
+        displaySection(),
         el('section', { class: 'ta-section' }, el('h3', {}, '聊天参考'),
             el('label', { class: 'ta-checkbox' }, el('input', { type: 'checkbox', checked: settings.enabled, onchange: e => { settings.enabled = e.target.checked; saveSettings(); renderStatus(); } }), '向当前聊天提供已启用的资料'),
             el('label', { class: 'ta-setting' }, '参考总上限（字符，不是 token）', el('input', { type: 'number', min: 1000, max: 30000, step: 500, value: settings.maxChars, onchange: e => {
@@ -469,11 +595,12 @@ async function initialize() {
     const ctx = context();
     const saved = ctx?.extensionSettings?.[KEY];
     settings = { enabled: saved?.enabled !== false, maxChars: Math.max(1000, Math.min(30000, Number(saved?.maxChars) || 12000)) };
-    const host = el('div', { id: 'terra-archive-host' });
+    host = el('div', { id: 'terra-archive-host' });
     shadow = host.attachShadow({ mode: 'open' });
     shadow.append(el('link', { rel: 'stylesheet', href: new URL(`./style.css?v=${VERSION}`, import.meta.url).href }));
     shadow.append(el('link', { rel: 'stylesheet', href: new URL(`./gallery.css?v=${VERSION}`, import.meta.url).href }));
-    launcher = button('◇ 泰拉档案馆', openPanel, { class: 'ta-launcher', title: '打开明日方舟人物与剧情资料库', disabled: false });
+    launcher = button('◇ 泰拉档案馆', () => { if (suppressLauncherClick) { suppressLauncherClick = false; return; } openPanel(); },
+        { class: 'ta-launcher', title: '打开明日方舟人物与剧情资料库（按住可拖动位置）', disabled: false });
     dialog = el('dialog', { class: 'ta-dialog', 'aria-labelledby': 'ta-dialog-title', oncancel: () => { lastFocus?.focus?.(); } });
     const close = button('关闭 ×', closePanel, { class: 'ta-close', disabled: false, 'aria-label': '关闭泰拉档案馆' });
     content = el('main', { class: 'ta-content', tabindex: '-1' });
@@ -486,6 +613,12 @@ async function initialize() {
     dialog.addEventListener('click', e => { if (e.target === dialog) closePanel(); });
     shadow.append(launcher, dialog);
     document.body.append(host);
+    enableLauncherDrag();
+    applyDisplay();
+    requestAnimationFrame(placeLauncher);
+    window.addEventListener('resize', placeLauncher);
+    window.addEventListener('orientationchange', () => setTimeout(placeLauncher, 300));
+    watchMenuEntry();
     try {
         for (const item of await allRecords()) {
             if (item.id === 'index:operators') state.operatorIndex = item;
@@ -514,7 +647,8 @@ async function initialize() {
 }
 
 const directoryViews = createViews({ el, button, hint, badge, link, field, state, records, render, titleBlock, empty, recordsList,
-    chatState, characterSelection, toggleCharacter, chooseSection, imageSource, openCharacter, openStory, storyDetail, ensureDirectory, ensurePortraits,
+    chatState, characterSelection, toggleCharacter, chooseSection, imageSource, openCharacter, openStory, storyDetail, ensureDirectory, ensurePortraits, adjustArt,
+    openDisplaySettings: () => { state.tab = 'settings'; state.error = ''; content.scrollTop = 0; render(); },
     refreshDirectory: tab => ensureDirectory(tab, true),
     updateCharacter: item => task('正在更新人物资料…', async () => {
         if (!globalThis.confirm('更新将替换本机文本与图片索引，并将当前聊天对此人物的勾选恢复为基础条目。继续？')) return;

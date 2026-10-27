@@ -1,4 +1,4 @@
-import { normalizeTitle, pageUrl, parseStory, safeImageUrl } from './core.js?v=0.2.0';
+import { normalizeTitle, pageUrl, parseStory, safeImageUrl } from './core.js?v=0.2.1';
 
 const API = 'https://prts.wiki/api.php';
 let queue = Promise.resolve();

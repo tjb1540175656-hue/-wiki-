@@ -1,5 +1,5 @@
-import { PROFESSIONS, STORY_CATEGORIES, filterOperators, backgroundUrl } from './directory.js?v=0.2.0';
-import { safeImageUrl } from './core.js?v=0.2.0';
+import { PROFESSIONS, STORY_CATEGORIES, filterOperators, backgroundUrl } from './directory.js?v=0.2.1';
+import { safeImageUrl } from './core.js?v=0.2.1';
 
 const PROF_SYMBOLS = { 先锋: '△', 近卫: '⚔', 重装: '⬡', 狙击: '⌁', 术师: '♜', 医疗: '✚', 辅助: '◇', 特种: '⌘' };
 const TABS = [
@@ -102,6 +102,13 @@ export function createViews(api) {
                         art ? image(api.imageSource(art), art.name, { class: 'ta-dossier-illustration', loading: 'eager' }) : el('span', { class: 'ta-art-placeholder' }, '暂无立绘'),
                         el('div', { class: 'ta-dossier-hero-label' }, el('span', { class: 'ta-kicker' }, meta?.en || item.characterId || 'OPERATOR'), el('h2', {}, item.title),
                             el('div', {}, badge(meta?.profession || '干员'), meta?.branch ? badge(meta.branch) : null, meta?.rarity ? el('span', { class: 'ta-rarity-inline' }, '★'.repeat(meta.rarity)) : null))),
+                    el('div', { class: 'ta-art-tools', role: 'group', 'aria-label': '立绘显示大小' }, el('span', {}, '立绘'),
+                        button('－', () => api.adjustArt('zoom', -10), { class: 'ta-mode', title: '缩小立绘', 'aria-label': '缩小立绘', disabled: false }),
+                        button('＋', () => api.adjustArt('zoom', 10), { class: 'ta-mode', title: '放大立绘', 'aria-label': '放大立绘', disabled: false }),
+                        button('矮', () => api.adjustArt('height', -5), { class: 'ta-mode', title: '降低立绘区域高度', disabled: false }),
+                        button('高', () => api.adjustArt('height', 5), { class: 'ta-mode', title: '增加立绘区域高度', disabled: false }),
+                        button('重置', () => api.adjustArt('reset'), { class: 'ta-mode', title: '恢复默认立绘显示', disabled: false }),
+                        button('更多…', api.openDisplaySettings, { class: 'ta-mode', title: '打开显示设置', disabled: false })),
                     el('div', { class: 'ta-dossier-thumbnails', 'aria-label': '切换立绘' }, item.images.map((artwork, index) => button(el('div', {}, image(api.imageSource(artwork), artwork.name), el('span', {}, /skin/.test(artwork.name) ? `时装 ${index}` : index === 0 ? '默认立绘' : '精英立绘')),
                         () => change(() => { state.artworkIndex = index; }), { class: `ta-art-thumbnail ${index === artIndex ? 'active' : ''}`, 'aria-label': `选择${artwork.name}` }))),
                     el('div', { class: 'ta-actions' }, button(active ? '从聊天移除' : '加入当前聊天', () => api.toggleCharacter(item), { class: `ta-button ${active ? '' : 'primary'}` }), button('更新资料', () => api.updateCharacter(item))),

@@ -1,6 +1,6 @@
 /* 0.2 图鉴界面。只覆盖扩展 Shadow DOM 内的样式，不影响酒馆主体。 */
 :host { --ta-bg: #08161d; --ta-panel: #0e2129; --ta-line: #28434c; --ta-muted: #94b2bc; --ta-accent: #91ede7; }
-.ta-dialog { width: min(1680px, calc(100vw - 32px)); height: 94dvh; border-radius: 11px; border-color: #39606a; background: #08161d; }
+.ta-dialog { width: min(1680px, calc(100vw - 32px)); height: 94vh; height: 94dvh; border-radius: 11px; border-color: #39606a; background: #08161d; }
 .ta-shell { grid-template-columns: 218px minmax(0, 1fr); }
 .ta-sidebar { background: radial-gradient(ellipse at 0 0, #2c5a5a40, transparent 70%), linear-gradient(170deg, #12252b, #07151d); position: relative; overflow: hidden; padding: 28px 20px; }
 .ta-sidebar::after { content: ''; position: absolute; inset: auto 0 0; height: 42%; pointer-events: none; opacity: .28; background: repeating-linear-gradient(90deg, transparent 0 16px, #142f3b 16px 27px, transparent 27px 36px), linear-gradient(0deg, #23414c, transparent); clip-path: polygon(0 30%, 12% 35%, 12% 16%, 18% 21%, 18% 0, 24% 15%, 24% 26%, 32% 24%, 32% 50%, 47% 41%, 47% 19%, 55% 16%, 55% 49%, 69% 43%, 69% 33%, 76% 29%, 76% 48%, 100% 38%, 100% 100%, 0 100%); }
@@ -165,7 +165,7 @@ select { color: #bfdae0; background: #0c2029; border: 1px solid #31535f; border-
     .ta-chapter-description > div { padding: 24px; }
 }
 @media (max-width: 600px) {
-    .ta-dialog { width: 100vw; height: 100dvh; border: 0; border-radius: 0; }
+    .ta-dialog { width: 100%; height: 100%; height: 100dvh; border: 0; border-radius: 0; }
     .ta-shell { display: flex; }
     .ta-sidebar { padding: max(9px, env(safe-area-inset-top)) 12px 8px; }
     .ta-sidebar::after { display: none; }
@@ -216,4 +216,23 @@ select { color: #bfdae0; background: #0c2029; border: 1px solid #31535f; border-
     .ta-chapter-detail { gap: 13px; }
     .ta-episode-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     .ta-episode-card { padding: 10px; min-height: 110px; }
+}
+/* 可调立绘与卡片尺寸：变量由 index.js 写在宿主元素上，保存在当前设备。 */
+.ta-dossier-hero { max-height: min(72vh, 760px); }
+.ta-dossier-illustration { object-fit: var(--ta-art-fit, contain); object-position: center var(--ta-art-y, 25%); transform: scale(var(--ta-art-zoom, 1)); transform-origin: center var(--ta-art-y, 25%); transition: transform .12s; }
+.ta-custom-art-height .ta-dossier-hero { aspect-ratio: auto; height: var(--ta-art-height, 60vh); min-height: 160px; max-height: none; }
+.ta-custom-card-size .ta-operator-grid:not(.mode-list) { grid-template-columns: repeat(auto-fill, minmax(min(var(--ta-card-size, 160px), 100%), 1fr)); }
+.ta-art-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; padding-top: 10px; color: #94b2bc; font-size: 11px; }
+.ta-art-tools > span { margin-right: 4px; letter-spacing: .08em; }
+.ta-art-tools .ta-mode { min-width: 40px; padding: 6px 10px; }
+.ta-range { display: grid; grid-template-columns: minmax(90px, 140px) minmax(0, 1fr) minmax(70px, auto); align-items: center; gap: 12px; margin: 10px 0; font-size: 12px; color: #b1cfce; }
+.ta-range input[type=range] { width: 100%; min-height: 36px; accent-color: var(--ta-accent); }
+.ta-range-value { color: #dfedec; font-variant-numeric: tabular-nums; text-align: right; }
+.ta-section h4 { margin: 18px 0 6px; color: #a8fff4; font-size: 13px; }
+@media (max-width: 600px) {
+    .ta-dossier-hero { max-height: min(470px, 62vh); }
+    .ta-range { grid-template-columns: 1fr auto; gap: 2px 10px; }
+    .ta-range input[type=range] { grid-column: 1 / -1; grid-row: 2; }
+    .ta-art-tools .ta-mode { flex: 1; min-width: 0; padding: 6px 4px; min-height: 40px; }
+    .ta-art-tools > span { width: 100%; }
 }

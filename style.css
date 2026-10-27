@@ -18,12 +18,15 @@ button:disabled { opacity: .45; cursor: default; }
 :focus-visible { outline: 2px solid var(--ta-accent); outline-offset: 3px; }
 .ta-launcher {
     position: fixed; right: max(18px, env(safe-area-inset-right)); bottom: max(112px, calc(env(safe-area-inset-bottom) + 96px));
-    z-index: 9900; padding: 12px 17px; border-radius: 12px; border: 1px solid #67958e;
+    z-index: 2147483000; padding: 12px 17px; border-radius: 12px; border: 1px solid #67958e;
     color: #b6eee4; background: #162a30f5; box-shadow: 0 8px 28px #0005;
     font-weight: 600; font-size: 13px; letter-spacing: .04em;
+    touch-action: none; user-select: none; -webkit-user-select: none; white-space: nowrap; max-width: calc(100vw - 8px);
 }
+.ta-launcher[hidden] { display: none; }
+.ta-launcher.is-dragging { opacity: .85; cursor: grabbing; box-shadow: 0 12px 34px #000a; }
 .ta-dialog {
-    width: min(1220px, calc(100vw - 48px)); height: min(900px, 90dvh); max-width: none; max-height: none;
+    width: min(1220px, calc(100vw - 48px)); height: min(900px, 90vh); height: min(900px, 90dvh); max-width: none; max-height: none;
     padding: 0; margin: auto; border: 1px solid #41545b; border-radius: 18px;
     color: var(--ta-text); background: var(--ta-bg); overflow: hidden; box-shadow: 0 32px 120px #0009;
 }
@@ -111,7 +114,7 @@ input[type=checkbox] { width: 18px; height: 18px; accent-color: var(--ta-accent)
 .ta-status > span:first-child { flex: 1; min-width: 180px; overflow-wrap: anywhere; }
 .ta-error { color: #f0b6a9; }
 @media (max-width: 900px) {
-    .ta-dialog { width: calc(100vw - 24px); height: 94dvh; }
+    .ta-dialog { width: calc(100vw - 24px); height: 94vh; height: 94dvh; }
     .ta-shell { grid-template-columns: 160px minmax(0, 1fr); }
     .ta-sidebar { padding: 23px 12px; }
     .ta-brand strong { font-size: 15px; }
@@ -121,7 +124,7 @@ input[type=checkbox] { width: 18px; height: 18px; accent-color: var(--ta-accent)
     .ta-record { width: auto; min-width: 100px; max-width: 220px; flex-shrink: 0; }
 }
 @media (max-width: 600px) {
-    .ta-dialog { width: 100vw; height: 100dvh; border: 0; border-radius: 0; margin: 0; }
+    .ta-dialog { position: fixed; inset: 0; width: 100%; height: 100%; height: 100dvh; max-width: 100%; max-height: 100%; border: 0; border-radius: 0; margin: 0; }
     .ta-shell { display: flex; flex-direction: column; }
     .ta-sidebar { padding: max(10px, env(safe-area-inset-top)) 12px 8px; border-right: 0; border-bottom: 1px solid var(--ta-line); flex-shrink: 0; }
     .ta-brand { padding-bottom: 8px; gap: 8px; }
@@ -153,7 +156,7 @@ input[type=checkbox] { width: 18px; height: 18px; accent-color: var(--ta-accent)
     .ta-catalog-buttons { grid-template-columns: 1fr; }
     .ta-status { padding: 8px 14px max(8px, env(safe-area-inset-bottom)); font-size: 10px; }
     .ta-status > span:first-child { min-width: 100%; }
-    .ta-launcher { right: 12px; padding: 10px 12px; font-size: 11px; }
+    .ta-launcher { right: 12px; bottom: max(150px, calc(env(safe-area-inset-bottom) + 130px)); padding: 10px 12px; font-size: 12px; }
     .ta-line { padding: 12px 10px 3px; }
 }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; animation: none !important; transition: none !important; } }
