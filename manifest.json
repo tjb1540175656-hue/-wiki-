@@ -1,0 +1,12 @@
+{
+  "display_name": "泰拉档案馆 · 人物与剧情",
+  "loading_order": 110,
+  "requires": [],
+  "optional": [],
+  "js": "index.js?ver=0.2.0",
+  "generate_interceptor": "terra_archive_interceptor",
+  "author": "Local project",
+  "version": "0.2.0",
+  "auto_update": false,
+  "minimum_client_version": "1.12.13"
+}

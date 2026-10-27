@@ -1,0 +1,12 @@
+泰拉档案馆 0.2.0 预览版 / GitHub 上传说明
+
+1. 打开你自己的 GitHub 仓库，选择 Add file → Upload files。
+2. 全选本文件夹内部的文件及文件夹上传，不要把外层文件夹再套进仓库。
+3. 仓库根目录必须直接有 manifest.json、index.js、core.js、wiki.js、storage.js、directory.js、views.js、style.css、gallery.css。
+4. 无需 dist，无需构建；这是原生 ES Modules 前端扩展。
+5. 不要上传 node_modules。此整理版已排除它。
+
+这是提前提供的预览版，包含新人物图鉴、档案页签和剧情分层网格；完整的新版电脑/手机界面回归尚未全部完成，请在仓库说明中保留预览版标识。
+
+没有替你上传 GitHub，也没有覆盖本机酒馆已安装的 0.1.0。
+代码和游戏资料授权不同：此包不包含完整游戏原文或美术素材，请勿擅自将采集到的游戏内容一起公开上传。

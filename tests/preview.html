@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>泰拉档案馆 · 开发验证</title>
+<style>body{margin:0;background:#101820;color:#d7e3e8;font:16px system-ui;padding:32px}p{max-width:650px;line-height:1.8}</style>
+<h1>泰拉档案馆 / 开发验证</h1>
+<p>这里是独立的测试宿主，不是酒馆。测试人物与剧情均为自创占位内容，使用右下角按钮打开插件。</p>
+<script type="module">
+import { putRecord } from '../storage.js';
+import { parseStory } from '../core.js';
+const events = new Map();
+const chats = { alpha: {}, beta: {} };
+let active = 'alpha';
+const ctx = {
+  name2: '测试档案员', extensionSettings: {}, chatMetadata: chats.alpha,
+  getCurrentChatId: () => active,
+  saveSettingsDebounced() {}, saveMetadataDebounced() {},
+  setExtensionPrompt(...args) { globalThis.testPrompt = args; },
+  eventTypes: { CHAT_CHANGED: 'chat-changed' },
+  eventSource: { on(event, callback) { events.set(event, callback); }, off(event) { events.delete(event); } },
+};
+globalThis.SillyTavern = { getContext: () => ctx };
+globalThis.testContext = ctx;
+globalThis.switchTestChat = id => { active = id; ctx.chatMetadata = chats[id]; events.get('chat-changed')?.(); };
+globalThis.confirm = () => true;
+await putRecord({ id:'character:测试档案员',kind:'character',title:'测试档案员',source:'https://prts.wiki/w/测试档案员',fetchedAt:Date.now(),characterId:'fixture',images:[],storyLinks:[],sections:[
+  {id:'archive:基础档案', title:'基础档案',text:'测试用角色，不是游戏人物。\n<img src=x onerror="window.injected=true">',basic:true},
+  {id:'archive:客观履历', title:'客观履历',text:'负责维护一座虚构图书馆。',basic:true},
+  {id:'archive:秘密',title:'秘密',text:'这是一段需要主动勾选的测试秘密。',basic:false},
+] });
+await putRecord({id:'story:测试故事/BEG',kind:'story',title:'测试故事/BEG',source:'https://prts.wiki/w/测试故事/BEG',fetchedAt:Date.now(),images:[],entries:parseStory('[Background(image="library")]\n[name="档案员"]欢迎来到测试图书馆。\n[Decision(options="查看书架;查看地图",values="1;2")]\n[Predicate(references="1")]\n[name="档案员"]这是测试书架。\n[Predicate(references="2")]\n[name="档案员"]这是测试地图。\n[Predicate(references="")]\n[name="档案员"]演示结束。')});
+await import('../index.js');
+</script>
+</html>
