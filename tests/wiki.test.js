@@ -32,6 +32,19 @@ test('extracts modern module narratives as separate opt-in sections', () => {
 test('refuses changed archive structures', () => {
     assert.throws(() => extractCharacter(page('<h2>干员档案</h2><p>未识别结构</p>')), /结构发生变化/);
 });
+test('full-copy source retains voices beyond the old 50000-character limit', () => {
+    const text = '自创语音'.repeat(14000) + '不可丢失的结尾';
+    const item = extractCharacter(page(archive + `<p>${text}</p><h2>下一节</h2>`));
+    const voice = item.sections.find(s => s.id === 'voice');
+    assert.ok(voice.text.endsWith('不可丢失的结尾'));
+    assert.ok(voice.text.length > 50000);
+    assert.ok(!voice.truncated);
+});
+test('short module narratives are not silently omitted from all-section copy', () => {
+    const item = extractCharacter(page(archive.replace('<div class="mw-heading"><h2>语音记录</h2></div>', '')
+        + '<h2>模组</h2><div class="equiptemplate"><div class="equip-name-box"><b>短测试模组</b></div><div class="equip-base-content">自创短篇。</div></div><h2>语音记录</h2>'));
+    assert.equal(item.sections.find(s => s.id === 'module:短测试模组').text, '自创短篇。');
+});
 test('extracts plain story script and ignores hidden resource databases', () => {
     const item = extractStory(page('<pre id="datas_txt">[name="测试"]一句自创台词\n[PlayMusic(key="x")]</pre><pre id="datas_char">不应进入正文</pre>'));
     assert.equal(item.entries.length, 1);

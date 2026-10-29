@@ -5,7 +5,9 @@
 <title>泰拉档案馆 · 开发验证</title>
 <style>body{margin:0;background:#101820;color:#d7e3e8;font:16px system-ui;padding:32px}p{max-width:650px;line-height:1.8}</style>
 <h1>泰拉档案馆 / 开发验证</h1>
-<p>这里是独立的测试宿主，不是酒馆。测试人物与剧情均为自创占位内容，使用右下角按钮打开插件。</p>
+<p>这里是独立的测试宿主，不是酒馆。测试人物与剧情均为自创占位内容，点击下方模拟魔棒菜单打开插件。</p>
+<div id="extensionsMenu" style="padding:15px;border:1px solid #627987"></div>
+<div id="extensions_settings2"></div>
 <script type="module">
 import { putRecord } from '../storage.js';
 import { parseStory } from '../core.js';
@@ -29,7 +31,9 @@ await putRecord({ id:'character:测试档案员',kind:'character',title:'测试�
   {id:'archive:客观履历', title:'客观履历',text:'负责维护一座虚构图书馆。',basic:true},
   {id:'archive:秘密',title:'秘密',text:'这是一段需要主动勾选的测试秘密。',basic:false},
 ] });
-await putRecord({id:'story:测试故事/BEG',kind:'story',title:'测试故事/BEG',source:'https://prts.wiki/w/测试故事/BEG',fetchedAt:Date.now(),images:[],entries:parseStory('[Background(image="library")]\n[name="档案员"]欢迎来到测试图书馆。\n[Decision(options="查看书架;查看地图",values="1;2")]\n[Predicate(references="1")]\n[name="档案员"]这是测试书架。\n[Predicate(references="2")]\n[name="档案员"]这是测试地图。\n[Predicate(references="")]\n[name="档案员"]演示结束。')});
-await import('../index.js');
+const script = '[Background(image="library")]\n[name="档案员"]欢迎来到测试图书馆。\n[Decision(options="查看书架;查看地图",values="1;2")]\n[Predicate(references="1")]\n[name="档案员"]这是测试书架。\n[Predicate(references="2")]\n[name="档案员"]这是测试地图。\n[Predicate(references="")]\n[name="档案员"]演示结束。';
+await putRecord({id:'story:测试故事/BEG',kind:'story',title:'测试故事/BEG',source:'https://prts.wiki/w/测试故事/BEG',fetchedAt:Date.now(),images:[],script,entries:parseStory(script)});
+await putRecord({id:'index:stories',kind:'index',title:'测试目录',fetchedAt:Date.now(),groups:[{id:'test-group',category:'main',title:'自创测试故事集',context:'测试目录',links:[{title:'测试故事/BEG',label:'测试故事（前）'}]}]});
+await import('../entry.js');
 </script>
 </html>

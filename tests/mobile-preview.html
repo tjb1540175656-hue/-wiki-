@@ -40,7 +40,7 @@ if (!new URL(location.href).searchParams.has('host')) {
     const loader = document.createElement('iframe');
     loader.id = 'script-loader';
     loader.hidden = true;
-    loader.srcdoc = '<script type="module">import "/index.js?v=0.2.3";<\/script>';
+    loader.srcdoc = '<script type="module">import "/entry.js?v=0.3.0";<\/script>';
     document.body.append(loader);
 }
 </script>
