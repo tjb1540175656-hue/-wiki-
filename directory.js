@@ -1,5 +1,5 @@
-import { normalizeTitle, pageUrl, safeImageUrl } from './core.js?v=0.2.3';
-import { loadWikiPage, wikiRequest, cleanText } from './wiki.js?v=0.2.3';
+import { normalizeTitle, pageUrl, safeImageUrl } from './core.js?v=0.3.0';
+import { loadWikiPage, wikiRequest, cleanText } from './wiki.js?v=0.3.0';
 
 export const PROFESSIONS = ['先锋', '近卫', '重装', '狙击', '术师', '医疗', '辅助', '特种'];
 export const STORY_CATEGORIES = [

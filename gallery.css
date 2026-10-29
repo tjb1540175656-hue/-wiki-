@@ -259,3 +259,18 @@ select { color: #bfdae0; background: #0c2029; border: 1px solid #31535f; border-
     .ta-drawer-body select { font-size: 16px; }
     .ta-content { padding-top: 14px; }
 }
+/* 复制与下载使用主对话框内的面板，避免手机弹窗落到 Shadow DOM 之外。 */
+.ta-transfer-sheet { position: absolute; inset: 0; z-index: 30; display: flex; align-items: center; justify-content: center; padding: 18px; background: #021018dc; pointer-events: auto; }
+.ta-transfer-card { width: min(850px, 100%); max-height: 85vh; max-height: 85dvh; overflow: auto; padding: 20px; border: 1px solid #66a6ac; border-radius: 10px; background: #10232b; color: var(--ta-text); box-shadow: 0 18px 80px #0009; }
+.ta-transfer-heading { display: flex; gap: 14px; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+.ta-transfer-heading h3 { margin: 0; }
+.ta-copy-text { display: block; width: 100%; min-height: 40vh; max-height: 55vh; resize: vertical; background: #081820; border: 1px solid #4c7882; border-radius: 6px; color: #e1eeee; padding: 12px; font: 14px/1.8 system-ui, sans-serif; white-space: pre-wrap; user-select: text; -webkit-user-select: text; touch-action: auto; }
+.ta-collection-progress { width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 10px; padding-top: 6px; border-top: 1px solid #3b5963; }
+.ta-collection-progress > span { min-width: 0; overflow-wrap: anywhere; }
+.ta-collection-progress .ta-button { font-size: 11px; min-height: 36px; }
+@media (max-width: 600px) {
+    .ta-transfer-sheet { padding: 10px; }
+    .ta-transfer-card { padding: 14px; max-height: 90vh; max-height: 90dvh; }
+    .ta-copy-text { font-size: 16px; }
+    .ta-collection-progress { flex-wrap: wrap; }
+}

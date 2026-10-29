@@ -1,5 +1,5 @@
-import { PROFESSIONS, STORY_CATEGORIES, filterOperators, backgroundUrl } from './directory.js?v=0.2.3';
-import { safeImageUrl } from './core.js?v=0.2.3';
+import { PROFESSIONS, STORY_CATEGORIES, filterOperators, backgroundUrl } from './directory.js?v=0.3.0';
+import { safeImageUrl } from './core.js?v=0.3.0';
 
 const PROF_SYMBOLS = { 先锋: '△', 近卫: '⚔', 重装: '⬡', 狙击: '⌁', 术师: '♜', 医疗: '✚', 辅助: '◇', 特种: '⌘' };
 const TABS = [
@@ -110,7 +110,8 @@ export function createViews(api) {
         const tab = TABS.find(t => t[0] === state.dossierTab) || TABS[0];
         const sections = item.sections.filter(tab[2]);
         return el('div', { class: 'ta-dossier-view' },
-            el('div', { class: 'ta-breadcrumbs' }, button('← 返回人物图鉴', () => change(() => { state.characterOpen = false; }), { class: 'ta-text-button', disabled: false }), badge(active ? '当前聊天已启用' : '仅查看资料'), link('查看原页 ↗', item.source)),
+            el('div', { class: 'ta-breadcrumbs' }, button('← 返回人物图鉴', () => change(() => { state.characterOpen = false; }), { class: 'ta-text-button', disabled: false }), badge(active ? '当前聊天已启用' : '仅查看资料'),
+                button('复制全部人物档案', () => api.copyCharacter(item)), link('查看原页 ↗', item.source)),
             el('div', { class: 'ta-dossier-layout' },
                 el('aside', { class: 'ta-dossier-art-column' },
                     el('div', { class: 'ta-dossier-hero' }, picture('bg_cher_5', ''),
@@ -178,7 +179,10 @@ export function createViews(api) {
         const links = group.links.filter(l => !query || `${l.title} ${l.label}`.toLowerCase().includes(query));
         return el('div', { class: 'ta-chapter-detail' },
             el('aside', { class: 'ta-chapter-description' }, picture(category.background, ''), el('div', {}, el('span', { class: 'ta-kicker' }, category.en), el('h2', {}, group.title), hint(group.context),
-                el('p', {}, `${group.links.length} 个剧情入口 · 来源于 PRTS Wiki`), hint('先阅读剧情，再确认需要提供给聊天的进度。查看目录不会推进剧情。'))),
+                el('p', {}, `${group.links.length} 个剧情入口 · 来源于 PRTS Wiki`),
+                button('下载整个故事集', () => api.downloadCollection(group), { title: '下载此目录内所有篇目，不受搜索筛选和阅读进度限制' }),
+                hint('下载按本故事集完整目录逐篇处理，含全部选项与分支标记，不含图片；大篇章可能需要较长时间。'),
+                hint('先阅读剧情，再确认需要提供给聊天的进度。复制与下载不会推进剧情。'))),
             el('div', { class: 'ta-episode-grid' }, links.map((entry, index) => button(el('div', {}, el('small', {}, String(index + 1).padStart(2, '0')),
                 el('strong', {}, entry.label), el('span', {}, records.has(`story:${entry.title}`) ? '已缓存 · 打开 →' : '载入这一篇 →')),
             () => api.openStory(entry.title), { class: 'ta-episode-card', title: entry.title }))));

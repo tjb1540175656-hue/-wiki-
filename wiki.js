@@ -1,4 +1,4 @@
-import { normalizeTitle, pageUrl, parseStory, safeImageUrl } from './core.js?v=0.2.3';
+import { normalizeTitle, pageUrl, parseStory, safeImageUrl } from './core.js?v=0.3.0';
 
 const API = 'https://prts.wiki/api.php';
 let queue = Promise.resolve();
@@ -93,7 +93,7 @@ export function extractCharacter(page) {
         const seen = new Set();
         for (const el of module.querySelectorAll('.equip-base-content, .poem')) {
             const text = cleanText(el);
-            if (text.length < 120 || seen.has(text)) continue;
+            if (!text || seen.has(text)) continue;
             seen.add(text);
             const name = el.closest('.equiptemplate')?.querySelector('.equip-name-box b')?.textContent?.trim() || '模组叙事';
             sections.push({ id: `module:${name}`, title: `${name}（模组 · 含剧透）`, text, basic: false });
@@ -102,7 +102,7 @@ export function extractCharacter(page) {
     const voice = fragmentFor(doc, '语音记录');
     if (voice) {
         const text = cleanText(voice);
-        if (text.length > 100) sections.push({ id: 'voice', title: '语音补充（可能含多语言与剧透）', text: text.slice(0, 50000), basic: false, truncated: text.length > 50000 });
+        if (text) sections.push({ id: 'voice', title: '语音补充（可能含多语言与剧透）', text, basic: false });
     }
     const links = [...doc.querySelectorAll('a[href]')].flatMap(a => {
         try {
@@ -139,7 +139,7 @@ export function extractStory(page) {
     const entries = parseStory(script);
     if (!entries.some(e => e.kind === 'text')) throw new Error('未识别到剧情对白，暂不保存。');
     return { id: `story:${page.title}`, kind: 'story', title: page.title, source: pageUrl(page.title), revision: page.revision,
-        fetchedAt: Date.now(), entries, images: [] };
+        fetchedAt: Date.now(), script, entries, images: [] };
 }
 
 export const loadStory = async input => extractStory(await loadWikiPage(input));

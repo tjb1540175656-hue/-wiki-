@@ -3,10 +3,10 @@
   "loading_order": 110,
   "requires": [],
   "optional": [],
-  "js": "index.js?ver=0.2.3",
+  "js": "entry.js?ver=0.3.0",
   "generate_interceptor": "terra_archive_interceptor",
   "author": "Local project",
-  "version": "0.2.3",
+  "version": "0.3.0",
   "auto_update": false,
   "minimum_client_version": "1.12.13"
 }

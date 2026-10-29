@@ -1,8 +1,8 @@
 {
   "name": "st-terra-archive",
-  "version": "0.2.3",
+  "version": "0.3.0",
   "private": true,
   "type": "module",
-  "scripts": { "test": "node --test tests/*.test.js", "check": "node --check index.js && node --check core.js && node --check wiki.js && node --check storage.js && node --check directory.js && node --check views.js" },
+  "scripts": { "test": "node --test tests/*.test.js", "check": "node --check entry.js && node --check index.js && node --check core.js && node --check wiki.js && node --check storage.js && node --check directory.js && node --check views.js && node --check export.js" },
   "devDependencies": { "linkedom": "^0.18.12" }
 }

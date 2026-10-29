@@ -1,8 +1,9 @@
-import { KEY, PROMPT_KEY, VERSION, normalizeChatState, defaultChatState, normalizeTitle, safeImageUrl, storyPath, renderEntry, buildReference } from './core.js?v=0.2.3';
-import { allRecords, putRecord, deleteRecord } from './storage.js?v=0.2.3';
-import { searchCharacters, loadCharacter, loadStory, loadCatalog, cacheArtwork } from './wiki.js?v=0.2.3';
-import { loadOperatorDirectory, loadStoryDirectory, loadMemoryDirectory, lookupPortraits } from './directory.js?v=0.2.3';
-import { createViews } from './views.js?v=0.2.3';
+import { KEY, PROMPT_KEY, VERSION, normalizeChatState, defaultChatState, normalizeTitle, safeImageUrl, storyPath, renderEntry, parseStory, buildReference } from './core.js?v=0.3.0';
+import { allRecords, putRecord, deleteRecord } from './storage.js?v=0.3.0';
+import { searchCharacters, loadCharacter, loadStory, loadCatalog, cacheArtwork } from './wiki.js?v=0.3.0';
+import { loadOperatorDirectory, loadStoryDirectory, loadMemoryDirectory, lookupPortraits } from './directory.js?v=0.3.0';
+import { createViews } from './views.js?v=0.3.0';
+import { characterText, storyText, collectCollection, copyText } from './export.js?v=0.3.0';
 
 // 与酒馆助手脚本一样，优先挂在可访问的父页面，而非脚本所在的小 iframe。
 const window = (() => {
@@ -19,19 +20,16 @@ const state = { tab: 'characters', selected: null, busy: false, status: '', erro
     storyCategory: '', storyGroup: null, storyFilter: '', storyLimit: 36 };
 const directoryAttempts = new Set(), portraitPending = new Set();
 let settings = { enabled: true, maxChars: 12000 };
-let shadow, host, dialog, content, statusBar, launcher, lastFocus;
+let shadow, host, dialog, content, statusBar, lastFocus, transferSheet, downloadUrl;
+let collectionController = null, collectionProgress = null;
 const blobUrls = new Map();
 let offEvents = [];
 
 // 显示偏好只存当前设备（localStorage），手机和电脑可以各用各的尺寸。
 const DISPLAY_KEY = 'terra-archive-display';
-const DISPLAY_DEFAULTS = { launcher: true, launcherRight: null, launcherBottom: null, artHeight: 0, artZoom: 100, artFit: 'contain', artY: 25, cardSize: 0 };
 const clampNumber = (value, min, max, fallback) => { const n = Number(value); return Number.isFinite(n) ? Math.min(max, Math.max(min, n)) : fallback; };
 function normalizeDisplay(value = {}) {
     return {
-        launcher: value.launcher !== false,
-        launcherRight: value.launcherRight == null ? null : clampNumber(value.launcherRight, 0, 10000, null),
-        launcherBottom: value.launcherBottom == null ? null : clampNumber(value.launcherBottom, 0, 10000, null),
         artHeight: Number(value.artHeight) ? clampNumber(value.artHeight, 20, 95, 0) : 0,
         artZoom: clampNumber(value.artZoom, 50, 250, 100),
         artFit: value.artFit === 'cover' ? 'cover' : 'contain',
@@ -60,75 +58,6 @@ function applyDisplay() {
     style.setProperty('--ta-card-size', `${display.cardSize || 160}px`);
     dialog?.classList.toggle('ta-custom-art-height', !!display.artHeight);
     dialog?.classList.toggle('ta-custom-card-size', !!display.cardSize);
-    placeLauncher();
-}
-function placeLauncher() {
-    if (!launcher) return;
-    launcher.hidden = !display.launcher;
-    launcher.style.right = '';
-    launcher.style.bottom = '';
-    // 手机地址栏、键盘和页面缩放会使可视区域小于布局视口；默认位置也要校正。
-    const viewport = window.visualViewport;
-    const left = viewport?.offsetLeft || 0, top = viewport?.offsetTop || 0;
-    const visibleWidth = viewport?.width || window.innerWidth;
-    const visibleHeight = viewport?.height || window.innerHeight;
-    const width = launcher.offsetWidth || 58, height = launcher.offsetHeight || 58;
-    const rect = launcher.getBoundingClientRect();
-    const wantedLeft = display.launcherRight == null ? rect.left : window.innerWidth - display.launcherRight - width;
-    const wantedTop = display.launcherBottom == null ? rect.top : window.innerHeight - display.launcherBottom - height;
-    const x = Math.max(left + 4, Math.min(wantedLeft, left + visibleWidth - width - 4));
-    const y = Math.max(top + 4, Math.min(wantedTop, top + visibleHeight - height - 4));
-    launcher.style.right = `${window.innerWidth - x - width}px`;
-    launcher.style.bottom = `${window.innerHeight - y - height}px`;
-}
-let suppressLauncherClick = false;
-function enableLauncherDrag() {
-    let start = null;
-    launcher.addEventListener('pointerdown', e => {
-        if (e.button !== 0 || e.isPrimary === false) return;
-        suppressLauncherClick = false;
-        const rect = launcher.getBoundingClientRect();
-        start = { x: e.clientX, y: e.clientY, right: window.innerWidth - rect.right, bottom: window.innerHeight - rect.bottom, moved: false, id: e.pointerId };
-        launcher.setPointerCapture?.(e.pointerId);
-    });
-    launcher.addEventListener('pointermove', e => {
-        if (!start || e.pointerId !== start.id) return;
-        const dx = e.clientX - start.x, dy = e.clientY - start.y;
-        if (!start.moved && Math.hypot(dx, dy) < 8) return;
-        if (!start.moved) { start.moved = true; launcher.classList.add('is-dragging'); }
-        const right = Math.min(Math.max(4, start.right - dx), window.innerWidth - launcher.offsetWidth - 4);
-        const bottom = Math.min(Math.max(4, start.bottom - dy), window.innerHeight - launcher.offsetHeight - 4);
-        launcher.style.right = `${right}px`; launcher.style.bottom = `${bottom}px`;
-    });
-    const finish = e => {
-        if (!start || e.pointerId !== start.id) return;
-        if (start.moved) {
-            suppressLauncherClick = true;
-            launcher.classList.remove('is-dragging');
-            saveDisplay({ launcherRight: parseFloat(launcher.style.right), launcherBottom: parseFloat(launcher.style.bottom) });
-        }
-        start = null;
-    };
-    launcher.addEventListener('pointerup', finish);
-    launcher.addEventListener('pointercancel', finish);
-    launcher.addEventListener('lostpointercapture', finish);
-}
-
-// 酒馆输入框左侧“魔杖”扩展菜单里的入口：手机上悬浮按钮被遮挡或隐藏时也能打开。
-function addMenuEntry() {
-    if (document.getElementById('terra-archive-menu-item')) return true;
-    const menu = document.getElementById('extensionsMenu');
-    if (!menu) return false;
-    menu.append(el('div', { id: 'terra-archive-menu-item', class: 'list-group-item flex-container flexGap5 interactable', tabindex: '0', title: '打开泰拉档案馆',
-        onclick: () => openPanel(), onkeydown: e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openPanel(); } } },
-    el('div', { class: 'fa-solid fa-book-open extensionsMenuExtensionButton' }), el('span', {}, '泰拉档案馆')));
-    return true;
-}
-function watchMenuEntry() {
-    if (addMenuEntry()) return;
-    const observer = new MutationObserver(() => { if (addMenuEntry()) observer.disconnect(); });
-    observer.observe(document.body, { childList: true, subtree: true });
-    setTimeout(() => observer.disconnect(), 60000);
 }
 
 function el(tag, attrs = {}, ...children) {
@@ -194,6 +123,10 @@ function renderStatus() {
     statusBar.replaceChildren(el('span', { class: state.error ? 'ta-error' : '' , role: state.error ? 'alert' : 'status' },
         state.error || state.status || '资料仅供参考 · AI 互动不等于官方剧情'),
     el('span', {}, settings.enabled ? `本轮参考 ${ref.chars.toLocaleString()} 字符${ref.truncated ? ' · 已截断' : ''}` : '参考注入已关闭'));
+    if (collectionProgress) statusBar.append(el('div', { class: 'ta-collection-progress' },
+        el('span', { role: 'status' }, `${collectionProgress.group}：${collectionProgress.completed}/${collectionProgress.total} · ${collectionProgress.title}`),
+        button(collectionController?.signal.aborted ? '将在当前篇完成后停止' : '停止故事集下载', () => { collectionController?.abort(); renderStatus(); },
+            { disabled: !!collectionController?.signal.aborted, class: 'ta-button' })));
 }
 
 async function task(label, work) {
@@ -360,7 +293,7 @@ function characterDetail(item) {
         hint(section.condition || (section.basic ? '默认参考条目' : '不会自动注入，按需勾选')),
         el('label', { class: 'ta-checkbox' }, el('input', { type: 'checkbox', checked: active?.sectionIds.includes(section.id), disabled: !active || state.busy,
             onchange: e => chooseSection(item, section.id, e.target.checked) }), '供当前聊天参考'),
-        el('div', { class: 'ta-prose' }, section.text), section.truncated ? hint('本条内容过长，仅缓存前 50,000 字符，请在原页查看完整内容。') : null));
+        el('div', { class: 'ta-prose' }, section.text), section.truncated ? hint('旧缓存内容已截断，全部复制时会尝试补读完整人物页。') : null));
     const images = el('section', { class: 'ta-section ta-artworks' }, el('h3', {}, '人物立绘'),
         hint('立绘与剧情差分不是同一类图片。本版加载此人物页的立绘与时装；不会把图片自动发给模型。'),
         item.imageWarning ? hint(item.imageWarning) : null,
@@ -428,6 +361,7 @@ function storyDetail(item) {
         button('下一页', () => { state.readerPage = { id: item.id, start: pageStart + 60 }; render(); }, { disabled: state.busy || pageStart + 60 >= display.length }));
     return el('article', { class: 'ta-detail' }, el('h3', {}, item.title), hint(progress),
         el('div', { class: 'ta-actions' }, button(active?.id === item.id ? '已关联当前聊天' : '关联当前聊天', () => setStoryProgress(item, -1), { disabled: state.busy || active?.id === item.id }),
+            button('复制本篇全部剧情', () => copyStory(item)),
             button('清除此剧情进度', () => { if (globalThis.confirm('清除本篇选项和已读进度？')) { const next = chatState(); if (next.story?.id === item.id) { next.story = null; saveChat(next); } state.readerPage = null; render(); } }),
             link('原文 / 完整演出 ↗', item.source)),
         hint('查看下一页不会自动推进聊天进度。点“确认至此”才会把这一位置之前的最近片段作为参考；这不是全自动剧情导演。'),
@@ -443,6 +377,89 @@ function storyDetail(item) {
                     button(entry.id === current.cursor ? '当前进度' : '确认至此', () => setStoryProgress(item, entry.id), { class: 'ta-text-button', title: `确认已读到脚本第 ${entry.line} 行` })),
                 el('p', { class: 'ta-prose' }, entry.text));
         })), pager());
+}
+
+function closeTransferSheet() {
+    transferSheet?.remove(); transferSheet = null;
+    if (downloadUrl) { const previous = downloadUrl; window.setTimeout(() => window.URL.revokeObjectURL(previous), 60000); downloadUrl = null; }
+}
+
+function transferPanel(title) {
+    closeTransferSheet();
+    const box = el('section', { class: 'ta-transfer-card', role: 'dialog', 'aria-label': title },
+        el('header', { class: 'ta-transfer-heading' }, el('h3', {}, title), button('关闭 ×', closeTransferSheet, { disabled: false })));
+    transferSheet = el('div', { class: 'ta-transfer-sheet' }, box);
+    dialog.append(transferSheet);
+    return box;
+}
+
+function showManualCopy(title, text) {
+    const box = transferPanel(title);
+    const area = el('textarea', { class: 'ta-copy-text', readonly: true, 'aria-label': '完整待复制内容' });
+    area.value = text;
+    const status = hint('浏览器未允许自动复制，可点“再次复制”，或长按文本 → 全选 → 复制。');
+    box.append(status, area, el('div', { class: 'ta-actions' },
+        button('全选文本', () => { area.focus(); area.select(); area.setSelectionRange(0, text.length); }, { disabled: false }),
+        button('再次复制', async () => {
+            try { await copyText(text, { window, document, container: box }); notify(`已复制 ${text.length.toLocaleString()} 字符。`); closeTransferSheet(); }
+            catch { status.textContent = '仍未获复制权限，请长按文本后全选、复制。'; area.focus(); area.select(); }
+        }, { disabled: false })));
+    area.focus(); area.select();
+}
+
+async function copyPrepared(title, text) {
+    try {
+        await copyText(text, { window, document, container: dialog });
+        notify(`${title}：已复制 ${text.length.toLocaleString()} 字符，不受当前页签或注入上限限制。`);
+    } catch { showManualCopy(title, text); }
+}
+
+function copyCharacter(item) {
+    if (item.sections.some(s => s.truncated)) return task('旧缓存含截断内容，正在补读完整人物页…', async () => {
+        const full = await loadCharacter(item.title);
+        await store({ ...full, images: item.images });
+        await copyPrepared('全部人物档案', characterText(full));
+    });
+    return copyPrepared('全部人物档案', characterText(item));
+}
+
+function copyStory(item) {
+    if (!item.script) return task('正在补读本篇完整剧情脚本…', async () => {
+        const full = await loadStory(item.title); await store(full);
+        await copyPrepared('本篇全部剧情', storyText(full));
+    });
+    return copyPrepared('本篇全部剧情', storyText(item));
+}
+
+function showCollectionFile(result) {
+    const box = transferPanel(result.complete ? '故事集已完整准备' : '故事集仅部分准备完成');
+    const blob = new window.Blob(['\uFEFF', result.content], { type: 'text/markdown;charset=utf-8' });
+    downloadUrl = window.URL.createObjectURL(blob);
+    const save = el('a', { href: downloadUrl, download: result.filename, target: '_blank', rel: 'noopener', class: 'ta-button primary' }, '保存故事集文件');
+    box.append(hint(`成功 ${result.success}/${result.total} 篇，失败 ${result.failed.length} 篇${result.cancelled ? '；你已停止任务' : ''}。`),
+        hint(result.complete ? '文件包括该故事集目录内的全部剧情入口及分支标记，不包含图片。' : '文件名和正文已标注“部分导出”，失败或未处理篇目不会被当作已完成。'),
+        el('div', { class: 'ta-actions' }, save),
+        hint('已尝试自动下载。如手机没有弹出保存提示，请点击上方按钮；iOS 可在打开文件后使用“分享 → 存储到文件”。'));
+    if (result.failed.length) box.append(el('details', {}, el('summary', {}, '查看失败清单'), el('ul', {}, result.failed.map(r => el('li', {}, `${r.title}：${r.error}`)))));
+    save.click();
+}
+
+function downloadCollection(group) {
+    const snapshot = { ...group, links: group.links.map(link => ({ ...link })) };
+    return task(`正在准备故事集“${group.title}”…`, async () => {
+        const controller = new window.AbortController();
+        collectionController = controller;
+        collectionProgress = { group: snapshot.title, completed: 0, total: snapshot.links.length, title: '开始读取' };
+        renderStatus();
+        try {
+            const result = await collectCollection(snapshot, {
+                getCached: id => records.get(id), load: loadStory, save: store, signal: controller.signal,
+                onProgress: progress => { collectionProgress = { ...progress, group: snapshot.title }; renderStatus(); },
+            });
+            showCollectionFile(result);
+            notify(result.complete ? `故事集已准备完成：${result.total} 篇。` : `故事集部分完成：成功 ${result.success}/${result.total} 篇，请查看下载说明。`);
+        } finally { collectionController = null; collectionProgress = null; renderStatus(); }
+    });
 }
 
 function downloadJson() {
@@ -466,6 +483,7 @@ function validateRecord(value) {
         if (!Array.isArray(value.sections) || value.sections.length > 80) throw new Error('人物档案格式不正确。');
         return { ...common, characterId: String(value.characterId || '').slice(0, 100), storyLinks: [], sections: value.sections.map((s, i) => ({
             id: String(s.id || `import-${i}`).slice(0, 100), title: String(s.title || '资料').slice(0, 160), text: String(s.text || '').slice(0, 100000), basic: s.basic === true,
+            truncated: s.truncated === true || String(s.text || '').length > 100000,
         })) };
     }
     if (!Array.isArray(value.entries) || value.entries.length > 30000) throw new Error('剧情条目格式不正确。');
@@ -479,6 +497,10 @@ function validateRecord(value) {
         if (e.kind === 'predicate' && Array.isArray(e.values)) return { ...base, kind: 'predicate', values: e.values.slice(0, 30).map(v => String(v).slice(0, 100)) };
         throw new Error('剧情包含不支持的条目。');
     });
+    if (typeof value.script === 'string') {
+        if (value.script.length > 2000000) throw new Error('单篇原始剧情脚本过大。');
+        return { ...common, script: value.script, entries: parseStory(value.script) };
+    }
     return { ...common, entries };
 }
 
@@ -534,12 +556,9 @@ function slider(label, value, min, max, step, unit, onchange, format = v => `${v
 
 function displaySection() {
     const auto = v => v ? null : '自动';
-    return el('section', { class: 'ta-section' }, el('h3', {}, '显示与按钮'),
+    return el('section', { class: 'ta-section' }, el('h3', {}, '显示设置'),
         hint('以下设置只保存在当前设备的浏览器中，手机和电脑可以分别调整，互不影响。'),
-        el('h4', {}, '悬浮按钮'),
-        el('label', { class: 'ta-checkbox' }, el('input', { type: 'checkbox', checked: display.launcher, onchange: e => saveDisplay({ launcher: e.target.checked }) }), '显示右下角“泰拉档案馆”悬浮按钮'),
-        hint('看不到按钮时：可按住按钮拖到任意位置；也可以从酒馆输入框左侧的“扩展菜单（魔杖图标）”→“泰拉档案馆”打开。'),
-        el('div', { class: 'ta-actions' }, button('按钮位置恢复默认', () => { saveDisplay({ launcherRight: null, launcherBottom: null, launcher: true }); render(); })),
+        hint('入口：输入框旁的魔棒扩展菜单 → 泰拉档案馆；也可从扩展设置中的“打开泰拉档案馆”进入。本版不再创建悬浮按钮。'),
         el('h4', {}, '人物立绘'),
         slider('立绘缩放', display.artZoom, 50, 250, 5, '%', v => saveDisplay({ artZoom: v })),
         slider('立绘区域高度', display.artHeight, 0, 95, 5, 'vh', v => saveDisplay({ artHeight: v }), v => auto(v) || `${v}% 屏高`),
@@ -606,6 +625,7 @@ function openPanel() {
     ensureDirectory(state.tab);
 }
 function closePanel() { dialog.close(); lastFocus?.focus?.(); }
+export function openArchive() { openPanel(); }
 
 async function initialize() {
     if (document.getElementById('terra-archive-host')) return;
@@ -624,25 +644,8 @@ async function initialize() {
     shadow = host.attachShadow({ mode: 'open' });
     shadow.append(el('link', { rel: 'stylesheet', href: new URL(`./style.css?v=${VERSION}`, import.meta.url).href }));
     shadow.append(el('link', { rel: 'stylesheet', href: new URL(`./gallery.css?v=${VERSION}`, import.meta.url).href }));
-    // 悬浮球直接挂在 body，样式放在 head；不再依赖 Shadow DOM 的宿主或内部样式表。
-    const launcherStyle = el('style', { id: 'terra-archive-launcher-style' }, `
-        #terra-archive-launcher {
-            all: initial; box-sizing: border-box; position: fixed; right: 18px; bottom: 105px;
-            z-index: 2147483000; width: 58px; height: 58px; display: grid; place-items: center;
-            margin: 0; padding: 0; border: 1px solid #91ede7; border-radius: 50%;
-            background: radial-gradient(circle at 33% 27%, #31565b, #122c34 60%, #08161d);
-            color: #bafff3; box-shadow: 0 8px 26px #0009, inset 0 0 0 4px #10242c;
-            font: 12px/1.25 system-ui, sans-serif; text-align: center; white-space: pre-line;
-            cursor: grab; touch-action: none; pointer-events: auto; visibility: visible; opacity: 1;
-            user-select: none; -webkit-user-select: none; -webkit-touch-callout: none;
-        }
-        #terra-archive-launcher[hidden] { display: none !important; }
-        #terra-archive-launcher:focus-visible { outline: 2px solid #bafff3; outline-offset: 3px; }
-        #terra-archive-launcher.is-dragging { cursor: grabbing; opacity: .85; }
-    `);
-    document.head.append(launcherStyle);
-    launcher = button('◇\n档案馆', () => { if (suppressLauncherClick) { suppressLauncherClick = false; return; } openPanel(); },
-        { id: 'terra-archive-launcher', class: 'ta-launcher', title: '泰拉档案馆（按住可拖动位置）', 'aria-label': '打开泰拉档案馆', disabled: false });
+    document.getElementById('terra-archive-launcher')?.remove();
+    document.getElementById('terra-archive-launcher-style')?.remove();
     dialog = el('dialog', { class: 'ta-dialog', 'aria-labelledby': 'ta-dialog-title', oncancel: () => { lastFocus?.focus?.(); } });
     const close = button('关闭 ×', closePanel, { class: 'ta-close', disabled: false, 'aria-label': '关闭泰拉档案馆' });
     content = el('main', { class: 'ta-content', tabindex: '-1' });
@@ -654,16 +657,9 @@ async function initialize() {
         el('div', { class: 'ta-main' }, el('div', { class: 'ta-topbar' }, el('span', {}, 'ARKNIGHTS REFERENCE TERMINAL'), close), content, statusBar)));
     dialog.addEventListener('click', e => { if (e.target === dialog) closePanel(); });
     shadow.append(dialog);
-    document.body.append(launcher, host);
-    enableLauncherDrag();
+    document.body.append(host);
     applyDisplay();
-    window.requestAnimationFrame(placeLauncher);
-    window.addEventListener('resize', placeLauncher);
-    window.visualViewport?.addEventListener('resize', placeLauncher);
-    window.visualViewport?.addEventListener('scroll', placeLauncher);
-    shadow.querySelector('link').addEventListener('load', placeLauncher);
-    window.addEventListener('orientationchange', () => setTimeout(placeLauncher, 300));
-    watchMenuEntry();
+    dialog.addEventListener('cancel', event => { if (transferSheet) { event.preventDefault(); closeTransferSheet(); } });
     try {
         for (const item of await allRecords()) {
             if (item.id === 'index:operators') state.operatorIndex = item;
@@ -688,11 +684,13 @@ async function initialize() {
         if (event.persisted) return;
         for (const off of offEvents) off(); offEvents = [];
         for (const url of blobUrls.values()) URL.revokeObjectURL(url);
+        collectionController?.abort(); closeTransferSheet();
     }, { once: true });
 }
 
 const directoryViews = createViews({ el, button, hint, badge, link, field, state, records, render, titleBlock, empty, recordsList,
     chatState, characterSelection, toggleCharacter, chooseSection, imageSource, openCharacter, openStory, storyDetail, ensureDirectory, ensurePortraits, adjustArt,
+    copyCharacter, downloadCollection,
     openDisplaySettings: () => { state.tab = 'settings'; state.error = ''; content.scrollTop = 0; render(); },
     refreshDirectory: tab => ensureDirectory(tab, true),
     updateCharacter: item => task('正在更新人物资料…', async () => {
@@ -708,5 +706,7 @@ const directoryViews = createViews({ el, button, hint, badge, link, field, state
     }),
 });
 
-if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', () => initialize().catch(console.error), { once: true });
-else initialize().catch(error => console.error('[泰拉档案馆] 初始化失败', error));
+export const ready = (async () => {
+    if (document.readyState === 'loading') await new Promise(resolve => document.addEventListener('DOMContentLoaded', resolve, { once: true }));
+    await initialize();
+})();
